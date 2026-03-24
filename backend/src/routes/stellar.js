@@ -1,5 +1,7 @@
 import express from 'express';
+import * as StellarSDK from '@stellar/stellar-sdk';
 import * as StellarService from '../services/stellar.js';
+import { broadcastToAccount } from '../services/websocket.js';
 
 const router = express.Router();
 
@@ -105,6 +107,20 @@ router.post('/payment/send', async (req, res) => {
   try {
     const { sourceSecret, destination, amount, assetCode } = req.body;
     const result = await StellarService.sendPayment(sourceSecret, destination, amount, assetCode);
+
+    const notification = { type: 'transaction', hash: result.hash, amount, assetCode: assetCode || 'XLM', timestamp: Date.now() };
+
+    // Notify sender's updated balance + tx notification
+    const senderKey = StellarSDK.Keypair.fromSecret(sourceSecret).publicKey();
+    const senderBalance = await StellarService.getBalance(senderKey);
+    broadcastToAccount(senderKey, { ...notification, direction: 'sent', balance: senderBalance.balances });
+
+    // Notify recipient of incoming tx + updated balance
+    try {
+      const recipientBalance = await StellarService.getBalance(destination);
+      broadcastToAccount(destination, { ...notification, direction: 'received', balance: recipientBalance.balances });
+    } catch (_) {}
+
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message });
