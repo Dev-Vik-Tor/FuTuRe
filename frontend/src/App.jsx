@@ -2,21 +2,25 @@ import { useState } from 'react';
 import axios from 'axios';
 import { isValidStellarAddress } from './utils/validateStellarAddress';
 import { validateAmount, formatAmount } from './utils/validateAmount';
+import { getFriendlyError } from './utils/errorMessages';
 
 function App() {
   const [account, setAccount] = useState(null);
   const [balance, setBalance] = useState(null);
   const [recipient, setRecipient] = useState('');
   const [amount, setAmount] = useState('');
-  const [status, setStatus] = useState('');
+  const [status, setStatus] = useState(null); // { type: 'success'|'error', message, retry? }
+
+  const setError = (error, retry) => setStatus({ type: 'error', message: getFriendlyError(error), retry });
+  const setSuccess = (message) => setStatus({ type: 'success', message });
 
   const createAccount = async () => {
     try {
       const { data } = await axios.post('/api/stellar/account/create');
       setAccount(data);
-      setStatus('Account created! Save your secret key securely.');
+      setSuccess('Account created! Save your secret key securely.');
     } catch (error) {
-      setStatus('Error: ' + error.message);
+      setError(error, createAccount);
     }
   };
 
@@ -26,7 +30,7 @@ function App() {
       const { data } = await axios.get(`/api/stellar/account/${account.publicKey}`);
       setBalance(data);
     } catch (error) {
-      setStatus('Error: ' + error.message);
+      setError(error, checkBalance);
     }
   };
 
@@ -47,10 +51,10 @@ function App() {
         amount,
         assetCode: 'XLM'
       });
-      setStatus(`Payment sent! Hash: ${data.hash}`);
+      setSuccess(`Payment sent! Hash: ${data.hash}`);
       checkBalance();
     } catch (error) {
-      setStatus('Error: ' + error.message);
+      setError(error, sendPayment);
     }
   };
 
@@ -139,8 +143,27 @@ function App() {
       )}
 
       {status && (
-        <div style={{ padding: '10px', background: '#e8f4f8', marginTop: '20px' }}>
-          {status}
+        <div style={{
+          padding: '10px 14px',
+          marginTop: '20px',
+          borderRadius: '4px',
+          background: status.type === 'error' ? '#fef2f2' : '#f0fdf4',
+          border: `1px solid ${status.type === 'error' ? '#fca5a5' : '#86efac'}`,
+          color: status.type === 'error' ? '#b91c1c' : '#15803d',
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: '8px',
+        }}>
+          <span>{status.type === 'error' ? '⚠️' : '✅'}</span>
+          <span style={{ flex: 1 }}>{status.message}</span>
+          {status.retry && (
+            <button
+              onClick={status.retry}
+              style={{ marginLeft: '8px', fontSize: '12px', cursor: 'pointer' }}
+            >
+              Retry
+            </button>
+          )}
         </div>
       )}
     </div>
