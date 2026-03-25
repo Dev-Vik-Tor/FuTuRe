@@ -2,6 +2,7 @@ import express from 'express';
 import * as StellarSDK from '@stellar/stellar-sdk';
 import * as StellarService from '../services/stellar.js';
 import { broadcastToAccount } from '../services/websocket.js';
+import { validate, rules } from '../middleware/validate.js';
 
 const router = express.Router();
 
@@ -65,7 +66,7 @@ router.post('/account/create', async (req, res) => {
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.get('/account/:publicKey', async (req, res) => {
+router.get('/account/:publicKey', rules.publicKeyParam, validate, async (req, res) => {
   try {
     const balance = await StellarService.getBalance(req.params.publicKey);
     res.json(balance);
@@ -103,7 +104,7 @@ router.get('/account/:publicKey', async (req, res) => {
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.post('/payment/send', async (req, res) => {
+router.post('/payment/send', rules.sendPayment, validate, async (req, res) => {
   try {
     const { sourceSecret, destination, amount, assetCode } = req.body;
     const result = await StellarService.sendPayment(sourceSecret, destination, amount, assetCode);
@@ -161,7 +162,7 @@ router.post('/payment/send', async (req, res) => {
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.get('/exchange-rate/:from/:to', async (req, res) => {
+router.get('/exchange-rate/:from/:to', rules.assetCodeParams, validate, async (req, res) => {
   try {
     const rate = await StellarService.getExchangeRate(req.params.from, req.params.to);
     res.json({ rate });
