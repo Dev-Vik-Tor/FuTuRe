@@ -3,6 +3,9 @@ import axios from 'axios';
 import { isValidStellarAddress } from './utils/validateStellarAddress';
 import { validateAmount, formatAmount } from './utils/validateAmount';
 import { getFriendlyError } from './utils/errorMessages';
+import { useWebSocket } from './hooks/useWebSocket';
+
+const STATUS_COLORS = { connected: '#22c55e', disconnected: '#ef4444', reconnecting: '#f59e0b' };
 
 function App() {
   const [account, setAccount] = useState(null);
@@ -10,9 +13,29 @@ function App() {
   const [recipient, setRecipient] = useState('');
   const [amount, setAmount] = useState('');
   const [status, setStatus] = useState(null); // { type: 'success'|'error', message, retry? }
+  const [notifications, setNotifications] = useState([]);
 
   const setError = (error, retry) => setStatus({ type: 'error', message: getFriendlyError(error), retry });
   const setSuccess = (message) => setStatus({ type: 'success', message });
+
+  const addNotification = (msg) => {
+    const note = {
+      id: Date.now(),
+      text: msg.direction === 'received'
+        ? `📥 Received ${msg.amount} ${msg.assetCode} — tx: ${msg.hash?.slice(0, 8)}…`
+        : `📤 Sent ${msg.amount} ${msg.assetCode} — tx: ${msg.hash?.slice(0, 8)}…`
+    };
+    setNotifications((prev) => [note, ...prev].slice(0, 5));
+  };
+
+  const handleWsMessage = (msg) => {
+    if (msg.type === 'transaction') {
+      addNotification(msg);
+      if (msg.balance) setBalance((prev) => prev ? { ...prev, balances: msg.balance } : null);
+    }
+  };
+
+  const wsStatus = useWebSocket(account?.publicKey ?? null, handleWsMessage);
 
   const createAccount = async () => {
     try {
@@ -60,7 +83,13 @@ function App() {
 
   return (
     <div className="app">
-      <h1>Stellar Remittance Platform</h1>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <h1>Stellar Remittance Platform</h1>
+        <span style={{ fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span style={{ width: 10, height: 10, borderRadius: '50%', background: STATUS_COLORS[wsStatus], display: 'inline-block' }} />
+          {wsStatus}
+        </span>
+      </div>
 
       <div className="section">
         <button onClick={createAccount}>Create Account</button>
@@ -113,6 +142,17 @@ function App() {
             {amountTouched && amountError && <p className="field-error">{amountError}</p>}
             <button onClick={sendPayment} disabled={!recipientValid || !amountValid}>Send</button>
           </div>
+
+          {notifications.length > 0 && (
+            <div className="section">
+              <h3>Live Notifications</h3>
+              {notifications.map((n) => (
+                <div key={n.id} className="status-banner success" style={{ marginBottom: 6 }}>
+                  <span>{n.text}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </>
       )}
 
