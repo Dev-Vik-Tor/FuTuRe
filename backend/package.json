@@ -5,7 +5,11 @@
   "scripts": {
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:performance": "vitest run tests/performance.benchmark.test.js",
+    "load-test:regression": "k6 run load-tests/k6/scenarios/performance-regression.js",
+    "load-test:endpoints": "k6 run load-tests/k6/scenarios/api-endpoints.js",
+    "load-test:concurrent": "k6 run load-tests/k6/scenarios/concurrent-users.js"
   },
   "dependencies": {
     "@stellar/stellar-sdk": "^12.3.0",
