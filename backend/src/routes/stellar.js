@@ -4,6 +4,7 @@ import * as StellarService from '../services/stellar.js';
 import { broadcastToAccount } from '../services/websocket.js';
 import { validate, rules } from '../middleware/validate.js';
 import { SUPPORTED_ASSETS, getIssuer } from '../config/assets.js';
+import { dispatchEvent } from '../webhooks/dispatcher.js';
 
 const router = express.Router();
 
@@ -34,6 +35,18 @@ router.post('/account/create', async (req, res) => {
     res.json(account);
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/account/import', rules.importAccount, validate, async (req, res) => {
+  try {
+    const { secretKey } = req.body;
+    const keypair = StellarSDK.Keypair.fromSecret(secretKey);
+    const publicKey = keypair.publicKey();
+    const balance = await StellarService.getBalance(publicKey);
+    res.json({ publicKey, secretKey, balances: balance.balances });
+  } catch (error) {
+    res.status(400).json({ error: 'Invalid secret key or account not found on network' });
   }
 });
 
@@ -116,11 +129,13 @@ router.post('/payment/send', rules.sendPayment, validate, async (req, res) => {
     const senderKey = StellarSDK.Keypair.fromSecret(sourceSecret).publicKey();
     const senderBalance = await StellarService.getBalance(senderKey);
     broadcastToAccount(senderKey, { ...notification, direction: 'sent', balance: senderBalance.balances });
+    dispatchEvent(senderKey, 'payment_sent', { hash: result.hash, amount, assetCode: assetCode || 'XLM', destination });
 
     // Notify recipient of incoming tx + updated balance
     try {
       const recipientBalance = await StellarService.getBalance(destination);
       broadcastToAccount(destination, { ...notification, direction: 'received', balance: recipientBalance.balances });
+      dispatchEvent(destination, 'payment_received', { hash: result.hash, amount, assetCode: assetCode || 'XLM', source: senderKey });
     } catch (_) {}
 
     res.json(result);
@@ -163,6 +178,30 @@ router.post('/payment/send', rules.sendPayment, validate, async (req, res) => {
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
+router.get('/account/:publicKey/transactions', rules.publicKeyParam, validate, async (req, res) => {
+  try {
+    const { cursor, limit, type, dateFrom, dateTo } = req.query;
+    const result = await StellarService.getTransactions(req.params.publicKey, {
+      cursor,
+      limit: limit ? Math.min(parseInt(limit), 50) : 10,
+      type,
+      dateFrom,
+      dateTo,
+    });
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.get('/fee-stats', async (req, res) => {
+  try {
+    res.json(await StellarService.getFeeStats());
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 router.get('/exchange-rate/:from/:to', rules.assetCodeParams, validate, async (req, res) => {
   try {
     const rate = await StellarService.getExchangeRate(req.params.from, req.params.to);
