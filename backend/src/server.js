@@ -5,6 +5,8 @@ import swaggerUi from 'swagger-ui-express';
 import swaggerSpec from './config/swagger.js';
 import logger from './config/logger.js';
 import { requestLogger } from './middleware/requestLogger.js';
+import { connectDB, checkDBHealth } from './db/client.js';
+import { runMigrations } from './db/migrate.js';
 import stellarRoutes from './routes/stellar.js';
 import multiSigRoutes from './routes/multiSig.js';
 import authRoutes from './routes/auth.js';
@@ -48,6 +50,8 @@ app.use(createRateLimiter());
 app.use(performanceMiddleware);
 
 // Initialize event sourcing
+await runMigrations();
+await connectDB();
 await eventMonitor.initialize();
 await auditLogger.initialize();
 
@@ -64,13 +68,24 @@ app.use('/api/mobile', mobileRoutes);
 app.use('/api/webhooks', webhookRoutes);
 app.use('/api/metrics', metricsRoutes);
 
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', network: getConfig().stellar.network });
+app.get('/health', async (req, res) => {
+  const db = await checkDBHealth();
+  const status = db.status === 'ok' ? 'ok' : 'degraded';
+  res.status(db.status === 'ok' ? 200 : 503).json({
+    status,
+    network: getConfig().stellar.network,
+    db,
+  });
 });
 
 const httpServer = createServer(app);
 initWebSocket(httpServer);
 
 httpServer.listen(PORT, () => {
+  const { stellar, meta } = getConfig();
+  logger.info('server.started', { port: PORT, network: stellar.network });
+  if (meta.loadedEnvFiles.length > 0) {
+    logger.info('server.envFiles', { files: meta.loadedEnvFiles.map(p => p.split('/').pop()).join(', ') });
+  }
   logger.info('server.started', { port: PORT, network: process.env.STELLAR_NETWORK });
 });

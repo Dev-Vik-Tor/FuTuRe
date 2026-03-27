@@ -1,6 +1,8 @@
 import * as StellarSDK from '@stellar/stellar-sdk';
 import { eventMonitor } from '../eventSourcing/index.js';
 import logger from '../config/logger.js';
+import prisma from '../db/client.js';
+import { getConfig } from '../config/env.js';
 
 let horizonServerUrl;
 let horizonServer;
@@ -38,6 +40,12 @@ export async function createAccount() {
     data: { publicKey, secretKey: pair.secret() },
     version: 1
   });
+
+  await prisma.user.upsert({
+    where: { publicKey },
+    update: {},
+    create: { publicKey },
+  }).catch(err => logger.warn('db.user.upsert.failed', { error: err.message }));
   
   return {
     publicKey,
@@ -47,6 +55,7 @@ export async function createAccount() {
 
 export async function getBalance(publicKey) {
   logger.debug('stellar.getBalance', { publicKey });
+  const account = await getHorizonServer().loadAccount(publicKey);
   const account = await server.loadAccount(publicKey);
   const balances = account.balances.map(b => ({
     asset: b.asset_type === 'native' ? 'XLM' : `${b.asset_code}:${b.asset_issuer}`,
@@ -69,6 +78,7 @@ export async function sendPayment(sourceSecret, destination, amount, assetCode =
   const sourcePublicKey = sourceKeypair.publicKey();
   logger.info('stellar.sendPayment.start', { source: sourcePublicKey, destination, amount, assetCode });
 
+  const sourceAccount = await getHorizonServer().loadAccount(sourcePublicKey);
   const sourceAccount = await server.loadAccount(sourcePublicKey);
   
   if (assetCode !== 'XLM' && !assetIssuer) {
@@ -97,6 +107,7 @@ export async function sendPayment(sourceSecret, destination, amount, assetCode =
 
   let result;
   try {
+    result = await getHorizonServer().submitTransaction(transaction);
     result = await server.submitTransaction(transaction);
   } catch (err) {
     logger.error('stellar.sendPayment.failed', { source: sourcePublicKey, destination, amount, assetCode, error: err.message });
@@ -117,6 +128,25 @@ export async function sendPayment(sourceSecret, destination, amount, assetCode =
     data: { destination, amount, hash: result.hash },
     version: 1
   });
+
+  // Persist transaction — ensure both users exist first
+  await prisma.$transaction(async (tx) => {
+    const [sender, recipient] = await Promise.all([
+      tx.user.upsert({ where: { publicKey: sourcePublicKey }, update: {}, create: { publicKey: sourcePublicKey } }),
+      tx.user.upsert({ where: { publicKey: destination },    update: {}, create: { publicKey: destination } }),
+    ]);
+    await tx.transaction.create({
+      data: {
+        hash: result.hash,
+        assetCode: assetCode || 'XLM',
+        amount,
+        ledger: result.ledger ?? null,
+        successful: result.successful,
+        senderId: sender.id,
+        recipientId: recipient.id,
+      },
+    });
+  }).catch(err => logger.warn('db.transaction.save.failed', { error: err.message }));
   
   return {
     hash: result.hash,
@@ -222,6 +252,10 @@ export async function getExchangeRate(from, to) {
 export async function getNetworkStatus() {
   const { horizonUrl } = getConfig().stellar;
   try {
+    const root = await getHorizonServer().root();
+    const status = {
+      network: isTestnet() ? 'testnet' : 'mainnet',
+      horizonUrl,
     const root = await server.root();
     const status = {
       network: isTestnet ? 'testnet' : 'mainnet',

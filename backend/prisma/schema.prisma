@@ -1,0 +1,40 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id           String        @id @default(uuid())
+  publicKey    String        @unique
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  settings     Setting?
+  sentTxs      Transaction[] @relation("sender")
+  receivedTxs  Transaction[] @relation("recipient")
+}
+
+model Transaction {
+  id          String   @id @default(uuid())
+  hash        String   @unique
+  assetCode   String   @default("XLM")
+  amount      Decimal
+  ledger      Int?
+  successful  Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  senderId    String
+  sender      User     @relation("sender",    fields: [senderId],    references: [id])
+  recipientId String
+  recipient   User     @relation("recipient", fields: [recipientId], references: [id])
+}
+
+model Setting {
+  id                String   @id @default(uuid())
+  userId            String   @unique
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  defaultAsset      String   @default("XLM")
+  notificationsOn   Boolean  @default(true)
+  updatedAt         DateTime @updatedAt
+}
