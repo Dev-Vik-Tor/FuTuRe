@@ -9,16 +9,20 @@ import { connectDB, checkDBHealth } from './db/client.js';
 import { runMigrations } from './db/migrate.js';
 import stellarRoutes from './routes/stellar.js';
 import multiSigRoutes from './routes/multiSig.js';
+import authRoutes from './routes/auth.js';
 import { initWebSocket } from './services/websocket.js';
 import eventsRoutes from './routes/events.js';
 import securityRoutes from './routes/security.js';
 import loadTestingRoutes from './routes/loadTesting.js';
 import chaosRoutes from './routes/chaos.js';
 import mobileRoutes from './routes/mobile.js';
+import webhookRoutes from './routes/webhooks.js';
+import metricsRoutes from './routes/metrics.js';
 import { eventMonitor } from './eventSourcing/index.js';
 import { auditLogger } from './security/index.js';
 import { getConfig } from './config/env.js';
 import { createRateLimiter } from './middleware/rateLimiter.js';
+import { performanceMiddleware } from './monitoring/middleware.js';
 
 dotenv.config();
 
@@ -42,6 +46,9 @@ app.use(requestLogger);
 // Rate limiting
 app.use(createRateLimiter());
 
+// Performance monitoring
+app.use(performanceMiddleware);
+
 // Initialize event sourcing
 await runMigrations();
 await connectDB();
@@ -52,11 +59,14 @@ await auditLogger.initialize();
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 app.use('/api/stellar', stellarRoutes);
 app.use('/api/multisig', multiSigRoutes);
+app.use('/api/auth', authRoutes);
 app.use('/api/events', eventsRoutes);
 app.use('/api/security', securityRoutes);
 app.use('/api/load-testing', loadTestingRoutes);
 app.use('/api/chaos', chaosRoutes);
 app.use('/api/mobile', mobileRoutes);
+app.use('/api/webhooks', webhookRoutes);
+app.use('/api/metrics', metricsRoutes);
 
 app.get('/health', async (req, res) => {
   const db = await checkDBHealth();
@@ -77,4 +87,5 @@ httpServer.listen(PORT, () => {
   if (meta.loadedEnvFiles.length > 0) {
     logger.info('server.envFiles', { files: meta.loadedEnvFiles.map(p => p.split('/').pop()).join(', ') });
   }
+  logger.info('server.started', { port: PORT, network: process.env.STELLAR_NETWORK });
 });
