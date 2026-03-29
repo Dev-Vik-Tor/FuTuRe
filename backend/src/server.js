@@ -25,6 +25,7 @@ import { auditLogger } from './security/index.js';
 import { getConfig } from './config/env.js';
 import { createRateLimiter } from './middleware/rateLimiter.js';
 import { performanceMiddleware } from './monitoring/middleware.js';
+import { cdnMiddleware } from './cdn/index.js';
 
 dotenv.config();
 
@@ -50,6 +51,9 @@ app.use(createRateLimiter());
 
 // Performance monitoring
 app.use(performanceMiddleware);
+
+// CDN cache-control and security headers
+app.use(cdnMiddleware);
 
 // Initialize event sourcing
 await runMigrations();
