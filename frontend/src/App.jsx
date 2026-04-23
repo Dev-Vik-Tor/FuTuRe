@@ -52,7 +52,9 @@ function App() {
 
   const msg = useMessages();
   const { canInstall, install, updateAvailable, applyUpdate } = usePWA();
-  const { queue: queueOffline, pendingCount } = useOfflineQueue();
+  const { queue: queueOffline, dequeue, pendingItems, pendingCount } = useOfflineQueue();
+  const [replaySecret, setReplaySecret] = useState('');
+  const [showReplayPrompt, setShowReplayPrompt] = useState(false);
   const { theme, isDark, toggleTheme } = useTheme();
   useRTL();
   const prefersReduced = useReducedMotion();
@@ -97,6 +99,16 @@ function App() {
   }, [loading]);
   }, [loading, showShortcuts]);
 
+  // Listen for SW notification that we're back online with queued payments
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return;
+    const onSwMessage = (e) => {
+      if (e.data?.type === 'REPLAY_QUEUED_PAYMENTS') setShowReplayPrompt(true);
+    };
+    navigator.serviceWorker.addEventListener('message', onSwMessage);
+    return () => navigator.serviceWorker.removeEventListener('message', onSwMessage);
+  }, []);
+
   const resetForm = () => dispatch({ type: A.RESET_FORM });
 
   const resetForm = () => { setRecipient(''); setAmount(''); };
@@ -105,11 +117,32 @@ function App() {
     resetForm();
   };
 
+  const replayQueued = async () => {
+    if (!replaySecret) return;
+    setShowReplayPrompt(false);
+    let anyFailed = false;
+    for (const item of pendingItems) {
+      try {
+        await withTimeout(axios.post('/api/stellar/payment/send', {
+          sourceSecret: replaySecret,
+          destination: item.destination,
+          amount: item.amount,
+          assetCode: item.assetCode,
+        }));
+        await dequeue(item.id);
+      } catch (error) {
+        anyFailed = true;
+        logError(error, { context: 'replayQueued' });
+      }
+    }
+    setReplaySecret('');
+    if (anyFailed) msg.error('Some queued payments failed to send. Please retry.');
+    else { msg.success('All queued payments sent.'); checkBalance(); }
+  };
   const confirmClearYes = () => { setConfirmClear(false); resetForm(); };
   const confirmClearNo  = () => setConfirmClear(false);
 
   const createAccount = async () => {
-    setLoading('create');
     try {
       const { data } = await withTimeout(axios.post('/api/stellar/account/create'));
       dispatch({ type: A.SET_ACCOUNT, payload: data });
@@ -176,8 +209,8 @@ function App() {
     } catch (error) {
       dispatch({ type: A.REVERT_BALANCE }); // roll back optimistic update
       if (!navigator.onLine) {
-        await queueOffline(payload);
-        msg.info('You are offline. Payment queued and will sync automatically.');
+        await queueOffline({ destination: payload.destination, amount: payload.amount, assetCode: payload.assetCode });
+        msg.info('You are offline. Payment queued — you\'ll be prompted to re-enter your secret key when back online.');
       } else {
         logError(error, { context: 'sendPayment' });
         msg.error(getFriendlyError(error), { retry: sendPayment });
@@ -667,6 +700,58 @@ function App() {
       <AnimatePresence>
         {showQR && account && (
           <QRCodeModal publicKey={account.publicKey} onClose={() => dispatch({ type: A.SET_SHOW_QR, payload: false })} />
+        )}
+      </AnimatePresence>
+
+      {/* Offline replay prompt */}
+      <AnimatePresence>
+        {showReplayPrompt && pendingCount > 0 && (
+          <motion.div
+            className="replay-modal-overlay"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="replay-title"
+            variants={v.pop} initial="hidden" animate="visible" exit="exit"
+          >
+            <div className="replay-modal">
+              <h2 id="replay-title">Send queued payments</h2>
+              <p>
+                You have {pendingCount} queued payment{pendingCount > 1 ? 's' : ''} waiting to be sent.
+                Enter your secret key to authorise {pendingCount > 1 ? 'them' : 'it'}.
+              </p>
+              <label htmlFor="replay-secret" className="sr-only">Secret key</label>
+              <input
+                id="replay-secret"
+                type="password"
+                placeholder="Secret key (S…)"
+                value={replaySecret}
+                onChange={(e) => setReplaySecret(e.target.value)}
+                autoComplete="off"
+                aria-describedby="replay-secret-hint"
+              />
+              <p id="replay-secret-hint" className="replay-modal__hint">
+                Your key is used only in memory to sign these transactions and is never stored.
+              </p>
+              <div className="replay-modal__actions">
+                <button
+                  type="button"
+                  onClick={replayQueued}
+                  disabled={!replaySecret}
+                  aria-label="Send queued payments"
+                >
+                  Send now
+                </button>
+                <button
+                  type="button"
+                  className="btn-clear"
+                  onClick={() => { setShowReplayPrompt(false); setReplaySecret(''); }}
+                  aria-label="Dismiss, send later"
+                >
+                  Later
+                </button>
+              </div>
+            </div>
+          </motion.div>
         )}
       </AnimatePresence>
     </div>
