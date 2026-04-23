@@ -46,6 +46,7 @@ function App() {
   const [showQR, setShowQR] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [showImportForm, setShowImportForm] = useState(false);
+  const [confirmClear, setConfirmClear] = useState(false);
   const { account, balance, loading, recipient, amount, showQR, showImportForm, showShortcuts } = useAppState();
   const dispatch = useAppDispatch();
 
@@ -100,9 +101,12 @@ function App() {
 
   const resetForm = () => { setRecipient(''); setAmount(''); };
   const clearForm = () => {
-    if ((recipient || amount) && !window.confirm('Clear the payment form?')) return;
+    if (recipient || amount) { setConfirmClear(true); return; }
     resetForm();
   };
+
+  const confirmClearYes = () => { setConfirmClear(false); resetForm(); };
+  const confirmClearNo  = () => setConfirmClear(false);
 
   const createAccount = async () => {
     setLoading('create');
@@ -454,18 +458,27 @@ function App() {
                   )}
                 </AnimatePresence>
                 <FeeDisplay amount={amount} visible={amountValid} />
-                <div style={{ display: 'flex', gap: 8 }}>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                   <motion.button onClick={sendPayment} {...tap} disabled={!recipientValid || !amountValid || loading === 'send'}>
                     {loading === 'send' ? <Spinner label="Sending payment..." /> : 'Send'}
                   </motion.button>
-                  <motion.button
-                    className="btn-clear"
-                    onClick={clearForm}
-                    {...tap}
-                    disabled={loading === 'send' || (!recipient && !amount)}
-                  >
-                    Clear
-                  </motion.button>
+                  {confirmClear ? (
+                    <span className="confirm-clear" role="group" aria-label="Confirm clear form">
+                      <span className="confirm-clear__label">Clear form?</span>
+                      <button type="button" className="confirm-clear__yes" onClick={confirmClearYes} aria-label="Yes, clear the form">Yes</button>
+                      <button type="button" className="confirm-clear__no"  onClick={confirmClearNo}  aria-label="No, keep the form">No</button>
+                    </span>
+                  ) : (
+                    <motion.button
+                      className="btn-clear"
+                      onClick={clearForm}
+                      {...tap}
+                      disabled={loading === 'send' || (!recipient && !amount)}
+                      aria-label="Clear payment form"
+                    >
+                      Clear
+                    </motion.button>
+                  )}
                 </div>
               </ErrorBoundary>
             </motion.div>
@@ -595,7 +608,7 @@ function App() {
                     </AnimatePresence>
 
                     <FeeDisplay amount={amount} visible={amountValid} />
-                    <div style={{ display: 'flex', gap: 8 }}>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                       <motion.button
                         onClick={sendPayment}
                         {...tap}
@@ -605,15 +618,23 @@ function App() {
                       >
                         {loading === 'send' ? <Spinner label="Sending payment…" /> : 'Send'}
                       </motion.button>
-                      <motion.button
-                        className="btn-clear"
-                        onClick={clearForm}
-                        {...tap}
-                        disabled={loading === 'send' || (!recipient && !amount)}
-                        aria-label="Clear payment form"
-                      >
-                        Clear
-                      </motion.button>
+                      {confirmClear ? (
+                        <span className="confirm-clear" role="group" aria-label="Confirm clear form">
+                          <span className="confirm-clear__label">Clear form?</span>
+                          <button type="button" className="confirm-clear__yes" onClick={confirmClearYes} aria-label="Yes, clear the form">Yes</button>
+                          <button type="button" className="confirm-clear__no"  onClick={confirmClearNo}  aria-label="No, keep the form">No</button>
+                        </span>
+                      ) : (
+                        <motion.button
+                          className="btn-clear"
+                          onClick={clearForm}
+                          {...tap}
+                          disabled={loading === 'send' || (!recipient && !amount)}
+                          aria-label="Clear payment form"
+                        >
+                          Clear
+                        </motion.button>
+                      )}
                     </div>
                   </ErrorBoundary>
                 </motion.section>

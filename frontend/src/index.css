@@ -691,6 +691,29 @@ kbd {
 .btn-clear:hover { background: #e5e7eb; }
 .btn-clear:disabled { background: #f9fafb; color: #9ca3af; border-color: #e5e7eb; cursor: not-allowed; }
 
+/* Inline clear confirmation */
+.confirm-clear {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.875rem;
+}
+.confirm-clear__label { color: var(--text-secondary, #6b7280); }
+.confirm-clear__yes,
+.confirm-clear__no {
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: background 0.15s;
+}
+.confirm-clear__yes { background: #ef4444; color: #fff; }
+.confirm-clear__yes:hover { background: #dc2626; }
+.confirm-clear__no  { background: #f3f4f6; color: #374151; border-color: #d1d5db; }
+.confirm-clear__no:hover  { background: #e5e7eb; }
+
 /* Fee Display */
 .fee-box {
   background: #f0f9ff;
